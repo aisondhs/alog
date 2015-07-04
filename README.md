@@ -11,6 +11,7 @@ go get github.com/aisondhs/alog
 2.demo
 
 ```go
+package main
 
 import "time"
 import "github.com/aisondhs/alog"
