@@ -14,7 +14,7 @@ import (
 
 const (
 	ROTATE_BY_DAY   int = 1 // rotate by day
-	ROTATE_BY_HOURS int = 2 // rotate by hour
+	ROTATE_BY_HOUR int = 2 // rotate by hour
 )
 
 type Mrecord map[string]interface{}
@@ -138,7 +138,7 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 				now.Year(), now.Month(), now.Day(),
 				0, 0, 0, 0, now.Location(),
 			).Add(24 * time.Hour).Sub(now))
-		case ROTATE_BY_HOURS:
+		case ROTATE_BY_HOUR:
 			// next hour's time line
 			fileTimer = time.NewTimer(time.Date(
 				now.Year(), now.Month(), now.Day(),
@@ -169,7 +169,7 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 				switch rotateMode {
 				case ROTATE_BY_DAY:
 					fileTimer = time.NewTimer(24 * time.Hour)
-				case ROTATE_BY_HOURS:
+				case ROTATE_BY_HOUR:
 					fileTimer = time.NewTimer(time.Hour)
 				}
 			case <-logger.closeChan:
@@ -201,7 +201,7 @@ func (logger *Logger) rotateFile(rotateMode int, fileType string, compress bool)
 	case ROTATE_BY_DAY:
 		dirName = logger.dir + "/" + now.Format("2006-01/")
 		fileName = dirName + now.Format("2006-01-02")
-	case ROTATE_BY_HOURS:
+	case ROTATE_BY_HOUR:
 		dirName = logger.dir + "/" + now.Format("2006-01/2006-01-02/")
 		fileName = dirName + now.Format("2006-01-02_03")
 	}
