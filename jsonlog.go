@@ -104,7 +104,7 @@ func (jsonfile *jsonFile) Close() error {
 // Log container
 type Logger struct {
 	dir       string
-	logChan   chan Mrecord
+	recChan   chan Mrecord
 	closeChan chan int
 	closeWait sync.WaitGroup
 	jsonfile      *jsonFile
@@ -119,7 +119,7 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 	logger := &Logger{
 		dir:       dir,
 		closeChan: make(chan int),
-		logChan:   make(chan Mrecord, 1024),
+		recChan:   make(chan Mrecord, 1024),
 	}
 	if err := logger.rotateFile(rotateMode, fileType, compress); err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 
 		for {
 			select {
-			case rec := <-logger.logChan:
+			case rec := <-logger.recChan:
 				logger.jsonfile.Put(rec)
 			case <-flushTicker.C:
 				if err := logger.jsonfile.Flush(); err != nil {
@@ -175,7 +175,7 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 			case <-logger.closeChan:
 				for {
 					select {
-					case rec := <-logger.logChan:
+					case rec := <-logger.recChan:
 						logger.jsonfile.Put(rec)
 					default:
 						return
@@ -236,5 +236,5 @@ func (logger *Logger) Close() {
 
 // put the log msg to the log file
 func (logger *Logger) Log(rec Mrecord) {
-	logger.logChan <- rec
+	logger.recChan <- rec
 }
