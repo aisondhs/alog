@@ -11,23 +11,27 @@ import (
 	"time"
 )
 
-
 const (
-	ROTATE_BY_DAY   int = 1 // rotate by day
+	ROTATE_BY_DAY  int = 1 // rotate by day
 	ROTATE_BY_HOUR int = 2 // rotate by hour
+	ROTATE_BY_SIZE int = 3 // rotate by size
 )
 
 type Mrecord map[string]interface{}
 
 type jsonFile struct {
 	file       *os.File
-	bufio   *bufio.Writer
-	gzip    *gzip.Writer
-	json    *json.Encoder
-	changed bool
+	bufio      *bufio.Writer
+	gzip       *gzip.Writer
+	json       *json.Encoder
+	changed    bool
+	maxSize    int64
+	curSize    int64
+	curFile    string
+	rotateMode int
 }
 
-func openLogFile(fileName, fileType string, compress bool) (*jsonFile, error) {
+func openLogFile(fileName, fileType string, compress bool, rotateMode int, maxSize int64) (*jsonFile, error) {
 	fullName := fileName + fileType
 	if _, err := os.Stat(fullName); err == nil {
 		os.Rename(fullName, fileName+".01"+fileType)
@@ -44,7 +48,7 @@ func openLogFile(fileName, fileType string, compress bool) (*jsonFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	jsonfile := &jsonFile{file: file}
+	jsonfile := &jsonFile{file: file, curFile: fullName, rotateMode: rotateMode}
 	if compress {
 		jsonfile.bufio = bufio.NewWriter(jsonfile.file)
 		jsonfile.gzip = gzip.NewWriter(jsonfile.bufio)
@@ -53,6 +57,12 @@ func openLogFile(fileName, fileType string, compress bool) (*jsonFile, error) {
 		jsonfile.bufio = bufio.NewWriter(jsonfile.file)
 		jsonfile.json = json.NewEncoder(jsonfile.bufio)
 	}
+	if jsonfile.rotateMode == ROTATE_BY_SIZE && maxSize == 0 {
+		jsonfile.maxSize = 1024 * 1024 * 1024 * 25
+	} else {
+		jsonfile.maxSize = maxSize
+	}
+
 	return jsonfile, nil
 }
 
@@ -61,6 +71,10 @@ func (jsonfile *jsonFile) Put(rec Mrecord) {
 		log.Println("log write failed:", err.Error())
 	}
 	jsonfile.changed = true
+}
+
+func (jsonfile *jsonFile) Maxsize(maxSize int64) {
+	jsonfile.maxSize = maxSize
 }
 
 func (jsonfile *jsonFile) Flush() error {
@@ -80,6 +94,10 @@ func (jsonfile *jsonFile) Flush() error {
 	}
 
 	jsonfile.changed = false
+	if jsonfile.rotateMode == ROTATE_BY_SIZE {
+		fileInfo, _ := os.Stat(jsonfile.curFile)
+		jsonfile.curSize = fileInfo.Size()
+	}
 	return nil
 }
 
@@ -107,7 +125,7 @@ type Logger struct {
 	recChan   chan Mrecord
 	closeChan chan int
 	closeWait sync.WaitGroup
-	jsonfile      *jsonFile
+	jsonfile  *jsonFile
 }
 
 //create a new Log container
@@ -144,6 +162,12 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 				now.Year(), now.Month(), now.Day(),
 				now.Hour(), 0, 0, 0, now.Location(),
 			).Add(time.Hour).Sub(now))
+		case ROTATE_BY_SIZE:
+			// check log file size per 10 minutes
+			fileTimer = time.NewTimer(time.Date(
+				now.Year(), now.Month(), now.Day(),
+				now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), now.Location(),
+			).Add(time.Second * 10).Sub(now))
 		}
 
 		// flush per 5 seconds
@@ -163,14 +187,25 @@ func Create(dir string, rotateMode int, fileType string, compress bool) (*Logger
 					log.Println("log flush failed:", err.Error())
 				}
 			case <-fileTimer.C:
-				if err := logger.rotateFile(rotateMode, fileType, compress); err != nil {
-					panic(err)
-				}
+
 				switch rotateMode {
 				case ROTATE_BY_DAY:
+					if err := logger.rotateFile(rotateMode, fileType, compress); err != nil {
+						panic(err)
+					}
 					fileTimer = time.NewTimer(24 * time.Hour)
 				case ROTATE_BY_HOUR:
+					if err := logger.rotateFile(rotateMode, fileType, compress); err != nil {
+						panic(err)
+					}
 					fileTimer = time.NewTimer(time.Hour)
+				case ROTATE_BY_SIZE:
+					if logger.jsonfile.curSize >= logger.jsonfile.maxSize {
+						if err := logger.rotateFile(rotateMode, fileType, compress); err != nil {
+							panic(err)
+						}
+					}
+					fileTimer = time.NewTimer(time.Second * 10)
 				}
 			case <-logger.closeChan:
 				for {
@@ -204,6 +239,9 @@ func (logger *Logger) rotateFile(rotateMode int, fileType string, compress bool)
 	case ROTATE_BY_HOUR:
 		dirName = logger.dir + "/" + now.Format("2006-01/2006-01-02/")
 		fileName = dirName + now.Format("2006-01-02_03")
+	case ROTATE_BY_SIZE:
+		dirName = logger.dir + "/logs/"
+		fileName = dirName + "alog"
 	}
 
 	// make sure the dir is exists
@@ -212,14 +250,16 @@ func (logger *Logger) rotateFile(rotateMode int, fileType string, compress bool)
 	}
 
 	// rotate before close the old file
+	var maxSize int64
 	if logger.jsonfile != nil {
+		maxSize = logger.jsonfile.maxSize
 		if err := logger.jsonfile.Close(); err != nil {
 			return err
 		}
 	}
 
 	//open or create a new log file
-	jsonfile, err := openLogFile(fileName, fileType, compress)
+	jsonfile, err := openLogFile(fileName, fileType, compress, rotateMode, maxSize)
 	if err != nil {
 		return err
 	}

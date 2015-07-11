@@ -7,8 +7,8 @@ import (
 var aLogger *ALogger
 
 // init global logger container
-func Init(dir string, rotateMode int,compress bool) {
-	logger, err := New(dir, rotateMode,compress)
+func Init(dir string, rotateMode int, compress bool) {
+	logger, err := New(dir, rotateMode, compress)
 	if err != nil {
 		panic(err)
 	}
@@ -18,6 +18,11 @@ func Init(dir string, rotateMode int,compress bool) {
 // close the global logger container
 func Close() {
 	aLogger.Close()
+}
+
+// close the global logger container
+func Maxsize(size int64) {
+	aLogger.Maxsize(size)
 }
 
 // write global logger container info msg
@@ -47,17 +52,22 @@ func SetDebug(debug bool) {
 
 // Logger container
 type ALogger struct {
-	logger     *Logger
-	debug bool
+	logger *Logger
+	debug  bool
 }
 
 // create a logger container
-func New(dir string, rotateMode int,compress bool) (*ALogger, error) {
+func New(dir string, rotateMode int, compress bool) (*ALogger, error) {
 	logger, err := Create(dir, rotateMode, ".log", compress)
 	if err != nil {
 		return nil, err
 	}
 	return &ALogger{logger, true}, nil
+}
+
+// set the log file rotate size
+func (alogger *ALogger) Maxsize(size int64) {
+	alogger.logger.jsonfile.Maxsize(size)
 }
 
 // close the log container
@@ -68,7 +78,7 @@ func (alogger *ALogger) Close() {
 func (alogger *ALogger) Log(msg string, logType string, data ...interface{}) {
 	rec := Mrecord{
 		"Time":    time.Now(),
-		"LogType":    logType,
+		"LogType": logType,
 		"Message": msg,
 	}
 	if data != nil {
