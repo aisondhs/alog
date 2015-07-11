@@ -33,4 +33,6 @@ if you want to save the logs to diffent dir due to the diffent business module,y
 ```go
 logger1 := log.New("dir1",alog.ROTATE_BY_DAY,true)
 logger2 := log.New("dir2", alog.ROTATE_BY_HOUR,false)
+logger3 := log.New("dir3", alog.ROTATE_BY_SIZE,false)
+logger3.Maxsize(1024*1024)
 ```
